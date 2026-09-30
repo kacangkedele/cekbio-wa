@@ -1,5 +1,6 @@
 import logging
 import sqlite3
+import asyncio
 import aiohttp
 from datetime import datetime, date, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -58,13 +59,17 @@ async def cek_bio_wa(nomor: str):
     phone = nomor.lstrip('+')
     url = f"http://localhost:3000/cek?nomor={phone}"
     try:
-        async with aiohttp.ClientSession() as session:
+        # Tambah batas waktu 10 detik. Jika lebih, bot akan balas gagal.
+        timeout = aiohttp.ClientTimeout(total=10)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.get(url) as response:
                 data = await response.json()
                 if data.get("status"):
                     return data.get("bio", "Bio tidak tersedia")
                 else:
                     return data.get("bio", "Gagal mendeteksi")
+    except asyncio.TimeoutError:
+        return "⚠️ Timeout: Server WA butuh waktu terlalu lama. Coba lagi nanti."
     except Exception as e:
         logger.error(f"Error API WA: {e}")
         return "⚠️ Server Sender (Node.js) sedang offline. Nyalakan sender.js!"
