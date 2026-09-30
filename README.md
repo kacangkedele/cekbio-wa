@@ -1,110 +1,112 @@
 ```markdown
 # 🤖 Bot By Angga Official - CekBio WA
 
-Bot Telegram canggih untuk pengecekan Bio WhatsApp dengan sistem tiering (Free, VIP, XVIP, VVIP) dan integrasi pembayaran QRIS semi-otomatis. Dibangun dengan `python-telegram-bot` versi 20+ dan database SQLite agar data tahan banting saat dijalankan di Termux.
+An advanced Telegram bot for checking WhatsApp bios with a tiering system (Free, VIP, XVIP, VVIP) and semi-automatic QRIS payment integration. Built with `python-telegram-bot` version 20+ and an SQLite database for robust data when running on Termux.
 
-## ✨ Fitur Utama
-- 🔍 **CekBio WhatsApp:** Deteksi nomor dan bio WhatsApp pengguna.
-- 📊 **Sistem Limit Harian:** Batas deteksi otomatis reset setiap hari.
-- 💎 **Sistem Tier Premium:** Free, VIP, XVIP, VVIP dengan limit masing-masing.
-- 🛒 **Pembayaran QRIS:** Kirim gambar QRIS otomatis ke pengguna, terima bukti transfer, dan verifikasi oleh Admin.
-- 🗄️ **Database Permanen:** Menggunakan SQLite (`cekbio.db`) sehingga data pengguna, limit, dan statistik tidak hilang saat bot di-restart.
-- 📱 **Termux Ready:** Dioptimalkan untuk berjalan langsung dari ponsel Android menggunakan Termux.
+## ✨ Key Features
+- 🔍 **CekBio WhatsApp:** Detects user's WhatsApp number and bio.
+- 📊 **Daily Limit System:** Automatic detection limit resets daily.
+- 💎 **Premium Tier System:** Free, VIP, XVIP, VVIP with their respective limits.
+- 🛒 **QRIS Payment:** Automatically sends QRIS images to users, receives proof of transfer, and is verified by the admin.
 
----
-
-## 🛠️ Prasyarat
-Sebelum memulai, pastikan Anda memiliki:
-1. **Token Bot Telegram** (Dapat dari [@BotFather](https://t.me/BotFather)).
-2. **ID Telegram Anda** (Dapat dari [@userinfobot](https://t.me/userinfobot)).
-3. Aplikasi **Termux** di Android (Jalankan dari Play Store atau F-Droid).
+- 🗄️ **Permanent Database:** Uses SQLite (`cekbio.db`) so user data, limits, and statistics are not lost when the bot is restarted.
+- 📱 **Termux Ready:** Optimized to run directly from an Android phone using Termux.
 
 ---
 
-## 📲 Cara Install & Menjalankan di Termux
+## 🛠️ Prerequisites
+Before you begin, make sure you have:
+1. **Telegram Bot Token** (Get it from [@BotFather](https://t.me/BotFather)).
+2. **Your Telegram ID** (Get it from [@userinfobot](https://t.me/userinfobot)).
+3. **Termux** app on Android (Run it from Play Store or F-Droid).
 
-Ikuti langkah-langkah berikut secara berurutan di aplikasi Termux Anda:
+---
 
-### 1. Update & Install Dependensi
-Masukkan perintah berikut untuk memperbarui paket Termux dan menginstall Python serta Git:
+## 📲 How to Install & Run in Termux
+
+Follow these steps sequentially in your Termux application:
+
+### 1. Update & Install Dependencies
+Enter the following commands to update the Termux packages and install Python and Git:
 ```bash
 pkg update && pkg upgrade -y
 pkg install python git -y
 ```
 
 ### 2. Clone Repository
-Unduh kode bot dari GitHub ke penyimpanan Termux Anda:
+Download the bot code from GitHub to your Termux repository:
 ```bash
 git clone https://github.com/kacangkedele/cekbio-wa
 cd cekbio-wa
 ```
 
-### 3. Install Library Python
-Install semua kebutuhan library yang ada di file `requirements.txt`:
+### 3. Install Python Libraries
+Install all required libraries in the `requirements.txt` file:
 ```bash
 pip install -r requirements.txt
 ```
 
-### 4. Konfigurasi Bot
-Edit file `config.py` untuk memasukkan Token Bot dan ID Admin Anda:
+### 4. Configure the Bot
+Edit the `config.py` file to include the Bot Token and Admin ID You:
 ```bash
 nano config.py
 ```
-*Ubah bagian `BOT_TOKEN` dan `ADMIN_ID` dengan data Anda. Jika sudah selesai, tekan `CTRL+X`, lalu `Y`, dan `Enter` untuk menyimpan.*
+*Change the `BOT_TOKEN` and `ADMIN_ID` sections with your data. When finished, press `CTRL+X`, then `Y`, and `Enter` to save.*
 
-### 5. Jalankan Bot
-Mulai jalankan bot dengan perintah:
+### 5. Run the Bot
+Start running the bot with the command:
 ```bash
 python bot.py
 ```
-Jika muncul tulisan `"Bot By Angga Official sedang berjalan di Termux..."`, berarti bot Anda sudah online! Buka Telegram dan coba ketik `/start` di bot Anda.
+If the message `"Bot By Angga Official is running on Termux..."` appears, your bot is online! Open Telegram and try typing `/start` in your bot.
 
 ---
 
-## ⚙️ Konfigurasi File `config.py`
-Pastikan Anda mengisi data berikut dengan benar:
+## ⚙️ `config.py` File Configuration
+Make sure you fill in the following information correctly:
 ```python
 BOT_TOKEN = "TOKEN_BOT_DARI_BOTFATHER"
-ADMIN_ID = 123456789  # ID Telegram Anda (berupa angka, bukan username)
-ADMIN_USERNAME = "UsernameAdminAnda"  # Username Anda tanpa tanda @
-CHANNEL_URL = "https://t.me/LinkChannelAnda"
-QRIS_IMAGE_URL = "URL_GAMBAR_QRIS_ANDA"
+ADMIN_ID = 123456789 # Your Telegram ID (number, not username)
+ADMIN_USERNAME = "YourAdminUsername" # Your username without the @ symbol
+CHANNEL_URL = "https://t.me/YourChannelLink"
+QRIS_IMAGE_URL = "YOURQRIS_IMAGE_URL"
 ```
 
 ---
 
-## 🎮 Daftar Perintah (Commands)
+## 🎮 Command List
 
-### Perintah Pengguna:
-- `/start` - Menampilkan menu utama dan info pengguna.
-- `/premium` - Menampilkan daftar paket premium dan harga.
-- `/detek <nomor>` - Mengecek bio WhatsApp. Contoh: `/detek +628123456789`
+### User Commands:
+- `/start` - Displays the main menu and user info.
+- `/premium` - Displays a list of premium packages and prices.
+- `/detect <number>` - Checks WhatsApp bio. Example: `/detect +628123456789`
 
-### Perintah Khusus Admin:
-- `/upgrade <ID_User> <Tier> <Jumlah_Hari>` - Mengaktifkan premium user secara manual setelah verifikasi pembayaran.
-  - **Contoh:** `/upgrade 6281234567 VIP 30`
+### Special Admin Commands:
+- `/upgrade <User_ID> <Tier> <Number_of_Days>` - Manually activates a premium user after payment verification.
+- **Example:** `/upgrade 6281234567 VIP 30`
 
 ---
 
-## 🔄 Alur Pembayaran QRIS (Semi-Otomatis)
-1. Pengguna menekan tombol "Beli VIP".
-2. Bot otomatis mengirimkan gambar QRIS dan nominal yang harus dibayar.
-3. Pengguna melakukan pembayaran via OVO/Dana/GoPay/Bank.
-4. Pengguna mengirimkan **screenshot bukti pembayaran** ke chat bot.
-5. Bot meneruskan bukti pembayaran tersebut ke chat **Admin** beserta detail user.
-6. Admin mengecek penerimaan dana, lalu mengetik command `/upgrade <ID> <Tier> <Hari>`.
-7. Bot otomatis memperbarui status pengguna menjadi VIP dan mengirim notifikasi selamat kepada pengguna.
+## 🔄 QRIS Payment Flow (Semi-Automatic)
+1. The user presses the "Buy VIP" button.
+2. The bot automatically sends a QRIS image and the amount to be paid.
+3. The user makes the payment via OVO/Dana/GoPay/Bank.
+4. The user sends a screenshot of proof of payment to the bot chat.
+5. The bot forwards the proof of payment to the **Admin** chat along with the user details.
+6. The admin checks the funds received, then types the command `/upgrade <ID> <Tier> <Days>`.
+7. The bot automatically updates the user's status to VIP and sends a congratulatory notification to the user.
 
 ---
 
 ## ❓ Troubleshooting
-- **Bot mati saat Termux di-tutup:** 
-  Ini wajar. Untuk menjalankan bot 24 jam di latar belakang, Anda bisa menggunakan layanan seperti `screen` atau `tmux` di Termux, atau menjalankannya di server VPS.
+- **Bot shuts down when Termux is closed:**
+This is normal. To run the bot 24/7 in the background, you can use services like `screen` or `tmux` in Termux, or run it on a VPS server.
 - **Error `ModuleNotFoundError`:**
-  Pastikan Anda sudah menjalankan `pip install -r requirements.txt` di dalam folder `cekbio-wa`.
+Make sure you have run `pip install -r requirements.txt` in the `cekbio-wa` folder.
 
 ---
-Dibuat dengan ❤️ oleh [Angga Official](https://github.com/kacangkedele)
+Made with ❤️ by [Angga Official](https://github.com/kacangkedele)
 🏠.(https://youtube.com/@bacotamatpro03).
-``` 
+```
 
+ 
