@@ -1,5 +1,6 @@
 import logging
 import sqlite3
+import aiohttp
 from datetime import datetime, date, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
@@ -7,6 +8,7 @@ import config
 
 # Setup Logging
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Init Database SQLite
 conn = sqlite3.connect('cekbio.db', check_same_thread=False)
@@ -50,6 +52,22 @@ def get_user(user_id: int, username: str):
             user_dict["tier"] = "Free"
             user_dict["expire_date"] = None
     return user_dict
+
+# === FUNGSI CEK BIO WA (TERHUBUNG KE sender.js) ===
+async def cek_bio_wa(nomor: str):
+    phone = nomor.lstrip('+')
+    url = f"http://localhost:3000/cek?nomor={phone}"
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as response:
+                data = await response.json()
+                if data.get("status"):
+                    return data.get("bio", "Bio tidak tersedia")
+                else:
+                    return data.get("bio", "Gagal mendeteksi")
+    except Exception as e:
+        logger.error(f"Error API WA: {e}")
+        return "⚠️ Server Sender (Node.js) sedang offline. Nyalakan sender.js!"
 
 # === COMMAND HANDLERS ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -140,20 +158,33 @@ async def detek(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text("❌ Format salah! Gunakan: `/detek +628xxx`", parse_mode='Markdown')
         return
 
-    nomor = context.args[0]
-    if not nomor.startswith('+'):
+    nomor_asli = context.args[0]
+    if not nomor_asli.startswith('+'):
         await update.message.reply_text("❌ Nomor harus diawali dengan format internasional contoh: `+628xxx`", parse_mode='Markdown')
         return
 
+    # Kurangi limit langsung
     cursor.execute("UPDATE users SET usage = usage + 1 WHERE user_id = ?", (user.id,))
     cursor.execute("UPDATE stats SET total_detections = total_detections + 1 WHERE id = 1")
     conn.commit()
     sisa_limit = limit - (user_data["usage"] + 1)
     
-    await update.message.reply_text(
-        f"🔍 *Sedang mendeteksi Bio untuk nomor:* `{nomor}`\n\n"
-        f"└─ *Hasil:* [Hasil Bio WhatsApp akan muncul di sini]\n"
-        f"└─ Status: Online/Offline\n\n"
+    # Kirim pesan proses
+    proses_msg = await update.message.reply_text(
+        f"🔍 *Sedang mendeteksi Bio untuk nomor:* `{nomor_asli}`\n\n⏳ _Mohon tunggu, sedang menarik data WhatsApp..._",
+        parse_mode='Markdown'
+    )
+
+    # Panggil fungsi cek WA yang menyambung ke sender.js
+    hasil_bio = await cek_bio_wa(nomor_asli)
+    
+    # Edit pesan dengan hasil asli
+    await proses_msg.edit_text(
+        f"✅ *Hasil Deteksi Bio WhatsApp*\n"
+        f"━━━━━━━━━━━━━━━━\n"
+        f"📞 Nomor: `{nomor_asli}`\n"
+        f"📝 Bio: {hasil_bio}\n"
+        f"━━━━━━━━━━━━━━━━\n"
         f"✅ Sisa deteksi hari ini: *{sisa_limit}* nomor",
         parse_mode='Markdown'
     )
@@ -272,10 +303,10 @@ def main() -> None:
     # Handler untuk foto bukti pembayaran
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     
-    # Handler untuk tombol callback (PERBAIKAN ERROR ADA DI SINI)
+    # Handler untuk tombol callback
     app.add_handler(CallbackQueryHandler(button_callback))
 
-    print("Bot By Angga Official sedang berjalan di Termux...")
+    print("Bot By Angga Official (Python) sedang berjalan...")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == '__main__':
