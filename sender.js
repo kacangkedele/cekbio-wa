@@ -1,4 +1,4 @@
-// #TERMUX# // 
+#--- BOT By Angga ---#
 const { default: makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
 const express = require('express');
 const P = require('pino');
@@ -26,18 +26,14 @@ async function startWhatsApp() {
         }
         if (update.connection === 'close') {
             console.log('❌ Koneksi WA terputus. Mencoba menghubungkan kembali dalam 5 detik...');
-            setTimeout(() => startWhatsApp(), 5000); // Jeda 5 detik biar gak spam
+            setTimeout(() => startWhatsApp(), 5000);
         }
     });
 
     if (!state.creds.registered && config.WA_NUMBER) {
-        // Ambil nomor murni tanpa @s.whatsapp.net
         const phoneNumber = config.WA_NUMBER.replace(/\D/g, '');
-        
         await new Promise(resolve => setTimeout(resolve, 2000));
-        
         try {
-            // Request pairing code hanya dengan format angka
             const code = await sock.requestPairingCode(phoneNumber);
             console.log('\n========================================');
             console.log('🔑 KODE PAIRING ANDA:', code);
@@ -52,7 +48,6 @@ async function startWhatsApp() {
 
 startWhatsApp();
 
-// API Lokal untuk Bot Python
 app.get('/cek', async (req, res) => {
     const nomor = req.query.nomor;
     if (!nomor) return res.json({ status: false, bio: "Nomor tidak ada" });
@@ -67,4 +62,3 @@ app.get('/cek', async (req, res) => {
 });
 
 app.listen(3000, () => console.log('🟢 API Sender jalan di port 3000'));
-EOF
