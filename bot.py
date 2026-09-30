@@ -175,19 +175,29 @@ async def detek(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         parse_mode='Markdown'
     )
 
-    # Panggil fungsi cek WA yang menyambung ke sender.js
+    # Panggil fungsi cek WA
     hasil_bio = await cek_bio_wa(nomor_asli)
     
-    # Edit pesan dengan hasil asli
-    await proses_msg.edit_text(
+    # Format teks hasil
+    final_text = (
         f"✅ *Hasil Deteksi Bio WhatsApp*\n"
         f"━━━━━━━━━━━━━━━━\n"
         f"📞 Nomor: `{nomor_asli}`\n"
         f"📝 Bio: {hasil_bio}\n"
         f"━━━━━━━━━━━━━━━━\n"
-        f"✅ Sisa deteksi hari ini: *{sisa_limit}* nomor",
-        parse_mode='Markdown'
+        f"✅ Sisa deteksi hari ini: *{sisa_limit}* nomor"
     )
+    
+    # Gunakan try...except agar bot tidak crash jika Markdown error
+    try:
+        await proses_msg.edit_text(final_text, parse_mode='Markdown')
+    except Exception as e:
+        logger.error(f"Gagal edit pesan (Markdown Error): {e}")
+        # Jika gagal, kirim ulang tanpa format Markdown
+        try:
+            await proses_msg.edit_text(final_text)
+        except Exception:
+            await update.message.reply_text(final_text)
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
