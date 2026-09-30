@@ -54,12 +54,11 @@ def get_user(user_id: int, username: str):
             user_dict["expire_date"] = None
     return user_dict
 
-# === FUNGSI CEK BIO WA (TERHUBUNG KE sender.js) ===
+# === FUNGSI CEK BIO WA ===
 async def cek_bio_wa(nomor: str):
     phone = nomor.lstrip('+')
     url = f"http://localhost:3000/cek?nomor={phone}"
     try:
-        # Tambah batas waktu 10 detik. Jika lebih, bot akan balas gagal.
         timeout = aiohttp.ClientTimeout(total=10)
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.get(url) as response:
@@ -69,10 +68,26 @@ async def cek_bio_wa(nomor: str):
                 else:
                     return data.get("bio", "Gagal mendeteksi")
     except asyncio.TimeoutError:
-        return "⚠️ Timeout: Server WA butuh waktu terlalu lama. Coba lagi nanti."
+        return "⚠️ Timeout: Server WA butuh waktu terlalu lama."
     except Exception as e:
-        logger.error(f"Error API WA: {e}")
-        return "⚠️ Server Sender (Node.js) sedang offline. Nyalakan sender.js!"
+        return "⚠️ Server Sender (Node.js) offline."
+
+# === FUNGSI CEK MASSAL (FILE) ===
+async def mass_cek_wa(numbers: list):
+    url = "http://localhost:3000/masscek"
+    try:
+        # Timeout 5 menit (300 detik) untuk file banyak
+        timeout = aiohttp.ClientTimeout(total=300)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(url, json={"numbers": numbers}) as response:
+                data = await response.json()
+                if data.get("status"):
+                    return data.get("stats", {})
+                else:
+                    return None
+    except Exception as e:
+        logger.error(f"Error Mass API: {e}")
+        return None
 
 # === COMMAND HANDLERS ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -101,8 +116,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"└─ Total Deteksi: {total_det}x\n\n"
         f"📌 *DAFTAR PERINTAH*\n"
         f"├─ /start - Menampilkan menu ini\n"
-        f"├─ /detek <nomor> - Cek Bio WhatsApp\n"
-        f"└─ /premium - Lihat paket upgrade tier\n\n"
+        f"├─ /detek <nomor> - Cek 1 Bio WA\n"
+        f"└─ Kirim file .txt - Cek Massal\n\n"
         f"📝 *CARA PENGGUNAAN CEKBIO*\n"
         f"Contoh: `/detek +628123456789`\n"
         f"━━━━━━━━━━━━━━━━\n"
@@ -168,22 +183,18 @@ async def detek(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text("❌ Nomor harus diawali dengan format internasional contoh: `+628xxx`", parse_mode='Markdown')
         return
 
-    # Kurangi limit langsung
     cursor.execute("UPDATE users SET usage = usage + 1 WHERE user_id = ?", (user.id,))
     cursor.execute("UPDATE stats SET total_detections = total_detections + 1 WHERE id = 1")
     conn.commit()
     sisa_limit = limit - (user_data["usage"] + 1)
     
-    # Kirim pesan proses
     proses_msg = await update.message.reply_text(
-        f"🔍 *Sedang mendeteksi Bio untuk nomor:* `{nomor_asli}`\n\n⏳ _Mohon tunggu, sedang menarik data WhatsApp..._",
+        f"🔍 *Sedang mendeteksi Bio untuk nomor:* `{nomor_asli}`\n\n⏳ _Mohon tunggu..._",
         parse_mode='Markdown'
     )
 
-    # Panggil fungsi cek WA
     hasil_bio = await cek_bio_wa(nomor_asli)
     
-    # Format teks hasil
     final_text = (
         f"✅ *Hasil Deteksi Bio WhatsApp*\n"
         f"━━━━━━━━━━━━━━━━\n"
@@ -193,16 +204,85 @@ async def detek(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"✅ Sisa deteksi hari ini: *{sisa_limit}* nomor"
     )
     
-    # Gunakan try...except agar bot tidak crash jika Markdown error
     try:
         await proses_msg.edit_text(final_text, parse_mode='Markdown')
-    except Exception as e:
-        logger.error(f"Gagal edit pesan (Markdown Error): {e}")
-        # Jika gagal, kirim ulang tanpa format Markdown
-        try:
-            await proses_msg.edit_text(final_text)
-        except Exception:
-            await update.message.reply_text(final_text)
+    except Exception:
+        await proses_msg.edit_text(final_text)
+
+# === HANDLER UNTUK FILE MASSAL ===
+async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    # Hanya Admin yang bisa pakai fitur massal agar WA tidak cepat banned
+    if update.effective_user.id != config.ADMIN_ID:
+        await update.message.reply_text("❌ Maaf, fitur cek massal hanya tersedia untuk Admin.")
+        return
+
+    doc = update.message.document
+    if not doc or not doc.file_name.endswith('.txt'):
+        await update.message.reply_text("❌ File harus berformat .txt berisi daftar nomor!")
+        return
+
+    proses_msg = await update.message.reply_text("📂 Menerima file, sedang membaca daftar nomor...")
+    
+    file = await doc.get_file()
+    file_bytes = await file.download_as_bytearray()
+    text = file_bytes.decode('utf-8')
+    
+    numbers = []
+    for line in text.split('\n'):
+        clean_num = line.strip().replace('+', '').replace('-', '').replace(' ', '')
+        if clean_num.isdigit():
+            numbers.append(clean_num)
+            
+    if len(numbers) == 0:
+        await proses_msg.edit_text("❌ Tidak ada nomor valid di dalam file!")
+        return
+
+    await proses_msg.edit_text(f"📊 Ditemukan *{len(numbers)} nomor*.\n\n⏳ Mulai mengecek massal, mohon tunggu (300ms per nomor)...", parse_mode='Markdown')
+    
+    stats = await mass_cek_wa(numbers)
+    
+    if not stats:
+        await proses_msg.edit_text("❌ Gagal cek massal. Pastikan sender.js aktif!")
+        return
+
+    total = stats.get("total", 0)
+    reg = stats.get("registered", 0)
+    not_reg = stats.get("notRegistered", 0)
+    has_bio = stats.get("hasBio", 0)
+    no_bio = stats.get("noBio", 0)
+    business = stats.get("business", 0)
+    
+    reg_percent = (reg / total * 100) if total > 0 else 0
+    not_reg_percent = (not_reg / total * 100) if total > 0 else 0
+    
+    result_text = (
+        f"Total File: {total} nomor\n\n"
+        f"STATISTIK RINGKASAN\n"
+        f"------------------------\n"
+        f"  Terdaftar WA ✅      : {reg}  ({reg_percent:.1f}%)\n"
+        f"  Tidak Terdaftar WA🚫   : {not_reg}  ({not_reg_percent:.1f}%)\n\n"
+        f"  ── dari {reg} terdaftar ──\n"
+        f"  Memiliki Bio      : {has_bio}\n"
+        f"  Tanpa Bio         : {no_bio}\n"
+        f"  Akun Baru         : 0\n"
+        f"  Flag (suspicious) : 0\n"
+        f"  Business Meta     : {business}\n"
+        f"     ├ Exclusive    : 0\n"
+        f"     ├ Standard     : 0\n"
+        f"     ├ Low          : 0\n"
+        f"     └ Agent AI     : 0\n"
+        f"Tahun akun WA didaftarkan:\n"
+        f"  - 2022: 0\n"
+        f"  - 2023: 0\n"
+        f"  - 2024: 0\n"
+        f"  - 2025: 0\n"
+        f"  - 2026: 0\n"
+    )
+    
+    try:
+        await proses_msg.edit_text(result_text, parse_mode='Markdown')
+    except Exception:
+        await proses_msg.edit_text(result_text)
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
@@ -233,46 +313,37 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     cursor.execute("DELETE FROM pending WHERE user_id = ?", (user.id,))
     conn.commit()
     
-    await update.message.reply_text("✅ *Bukti pembayaran berhasil dikirim ke Admin!*\n\nMohon tunggu 1-5 menit, Admin akan memverifikasi pembayaran Anda dan mengaktifkan tier Anda secara manual.\n\nTerima kasih!", parse_mode='Markdown')
+    await update.message.reply_text("✅ *Bukti pembayaran berhasil dikirim ke Admin!* Tunggu verifikasi.", parse_mode='Markdown')
 
 async def upgrade_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.effective_user.id != config.ADMIN_ID:
         return
-        
     try:
         target_user_id = int(context.args[0])
         target_tier = context.args[1].upper()
         days = int(context.args[2])
-        
         if target_tier not in TIER_LIMITS:
             await update.message.reply_text("❌ Tier tidak valid. Pilih: VIP, XVIP, atau VVIP")
             return
-            
         user = get_user(target_user_id, "Unknown")
         current_expire_str = user.get("expire_date")
         base_date = date.today()
-        
         if current_expire_str:
             current_expire = date.fromisoformat(current_expire_str)
             if current_expire > base_date:
                 base_date = current_expire
-                
         new_expire = base_date + timedelta(days=days)
-        
         cursor.execute("UPDATE users SET tier = ?, expire_date = ? WHERE user_id = ?", (target_tier, new_expire.isoformat(), target_user_id))
         conn.commit()
-        
-        await update.message.reply_text(f"✅ Berhasil! User `{target_user_id}` telah di-upgrade ke tier *{target_tier}* selama {days} hari.", parse_mode='Markdown')
-        await context.bot.send_message(chat_id=target_user_id, text=f"🎉 *PEMBAYARAN DITERIMA* 🎉\n\nSelamat! Akun Anda telah di-upgrade ke tier *{target_tier}*.\nDurasi: {days} hari.\n\nSekarang Anda bisa mendeteksi hingga {TIER_LIMITS[target_tier]} nomor per hari!", parse_mode='Markdown')
-        
+        await update.message.reply_text(f"✅ Berhasil! User `{target_user_id}` di-upgrade ke *{target_tier}* selama {days} hari.", parse_mode='Markdown')
+        await context.bot.send_message(chat_id=target_user_id, text=f"🎉 *PEMBAYARAN DITERIMA* 🎉\n\nAkun Anda di-upgrade ke *{target_tier}*.\nDurasi: {days} hari.", parse_mode='Markdown')
     except (IndexError, ValueError):
-        await update.message.reply_text("❌ Format salah! Gunakan: `/upgrade <user_id> <tier> <hari>`\nContoh: `/upgrade 6281234567 VIP 1`", parse_mode='Markdown')
+        await update.message.reply_text("❌ Format salah! Gunakan: `/upgrade <user_id> <tier> <hari>`", parse_mode='Markdown')
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     data = query.data
     user = query.from_user
-    
     if data == "show_premium":
         await premium(update, context)
     elif data == "back_to_start":
@@ -280,28 +351,13 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     elif data.startswith("buy_"):
         tier_name = data.split("_")[1]
         price = TIER_PRICES[tier_name]
-        
         cursor.execute("INSERT OR REPLACE INTO pending (user_id, tier) VALUES (?, ?)", (user.id, tier_name))
         conn.commit()
-        
-        text = (
-            f"🛒 *PEMBAYARAN TIER {tier_name}* 🛒\n"
-            f"━━━━━━━━━━━━━━━━\n"
-            f"Silakan scan QRIS di bawah ini dan bayar sebesar:\n"
-            f"💵 *Rp {price}*\n\n"
-            f"📌 *Panduan:*\n"
-            f"1. Scan QRIS menggunakan OVO, GoPay, Dana, atau Bank apa saja.\n"
-            f"2. Bayar sesuai nominal di atas.\n"
-            f"3. Screenshot bukti pembayaran Anda.\n"
-            f"4. Kirimkan foto/screenshot bukti pembayaran KE CHAT INI.\n\n"
-            f"_Bot akan meneruskan bukti pembayaran Anda ke Admin untuk diverifikasi._"
-        )
-        keyboard = [[InlineKeyboardButton("❌ Batalkan Transaksi", callback_data="cancel_payment")]]
-        
+        text = f"🛒 *PEMBAYARAN TIER {tier_name}* 🛒\n━━━━━━━━━━━━━━━━\nSilakan scan QRIS dan bayar sebesar:\n💵 *Rp {price}*\n\nKirimkan foto bukti pembayaran KE CHAT INI."
+        keyboard = [[InlineKeyboardButton("❌ Batalkan", callback_data="cancel_payment")]]
         await query.answer()
         await query.message.delete()
         await context.bot.send_photo(chat_id=user.id, photo=config.QRIS_IMAGE_URL, caption=text, parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(keyboard))
-
     elif data == "cancel_payment":
         cursor.execute("DELETE FROM pending WHERE user_id = ?", (user.id,))
         conn.commit()
@@ -318,10 +374,13 @@ def main() -> None:
     # Handler untuk foto bukti pembayaran
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     
+    # Handler untuk file .txt massal
+    app.add_handler(MessageHandler(filters.Document.TEXT, handle_document))
+    
     # Handler untuk tombol callback
     app.add_handler(CallbackQueryHandler(button_callback))
 
-    print("Bot By Angga Official (Python) sedang berjalan...")
+    print("Bot By Angga Official (Python + MassCheck) sedang berjalan...")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == '__main__':
