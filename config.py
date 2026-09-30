@@ -13,4 +13,4 @@ ADMIN_USERNAME = "UsernameAdminAnda"
 CHANNEL_URL = "https://t.me/YourChannelLink"
 
 # Link Gambar QRIS
-QRIS_IMAGE_URL = "https://imgur.com/a/8JyvtfR4ffe2abc863a9c0a1b3ceffbb5"
+QRIS_IMAGE_URL = "https://raw.githubusercontent.com/kacangkedele/cekbio-wa/main/1790740259132.png"
