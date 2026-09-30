@@ -2,7 +2,7 @@ import logging
 import sqlite3
 from datetime import datetime, date, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 import config
 
 # Setup Logging
@@ -268,8 +268,12 @@ def main() -> None:
     app.add_handler(CommandHandler("premium", premium))
     app.add_handler(CommandHandler("detek", detek))
     app.add_handler(CommandHandler("upgrade", upgrade_user))
+    
+    # Handler untuk foto bukti pembayaran
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    app.add_handler(MessageHandler(filters.CallbackQuery, button_callback))
+    
+    # Handler untuk tombol callback (PERBAIKAN ERROR ADA DI SINI)
+    app.add_handler(CallbackQueryHandler(button_callback))
 
     print("Bot By Angga Official sedang berjalan di Termux...")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
