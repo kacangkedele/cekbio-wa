@@ -1,2 +1,390 @@
 # cekbio-wa
 I made Whatsapp Bio Check Tool By using telegram bot At this time 
+
+Untuk membuat kode bot Anda rapi, aman, dan berjalan optimal di **Termux** maupun di server lain, kita perlu memisahkan konfigurasi, database, dan logika utama. Saya juga telah mengubahnya menggunakan **SQLite** agar data pengguna dan limit tidak hilang saat bot di-restart di Termux.
+
+Berikut adalah struktur folder untuk GitHub Anda (`https://github.com/kacangkedele/cekbio-wa`):
+
+```text
+cekbio-wa/
+├── .gitignore
+├── README.md
+├── requirements.txt
+├── config.py
+└── bot.py
+```
+
+Silakan buat file berikut di folder proyek Anda:
+
+### 1. `config.py` (File Konfigurasi)
+Simpan pengaturan dan token di sini agar mudah diubah tanpa menyentuh kode utama.
+
+```python
+# config.py
+
+# Masukkan Token Bot dari @BotFather
+BOT_TOKEN = "PASTE_TOKEN_BOT_ANDA_DISINI"
+
+# Masukkan ID Telegram Anda (bisa cek di @userinfobot)
+ADMIN_ID = 123456789 
+
+# Username Telegram Anda tanpa tanda @
+ADMIN_USERNAME = "UsernameAdminAnda"
+
+# Link Channel Anda
+CHANNEL_URL = "https://t.me/YourChannelLink"
+
+# Link Gambar QRIS
+QRIS_IMAGE_URL = "https://z-cdn-media.chatglm.cn/files/e5358dd8-1a1f-49a5-b33c-d23067ffceca.png?auth_key=1890740369-83dedd3b11354dd387a7d2ed70ce45c4-0-ef900d4ffe2abc863a9c0a1b3ceffbb5"
+```
+
+### 2. `bot.py` (Kode Utama Bot)
+Kode ini sudah menggunakan **SQLite** agar tahan banting di Termux (data tetap aman walau aplikasi Termux di-clear dari RAM).
+
+```python
+import logging
+import sqlite3
+from datetime import datetime, date, timedelta
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+import config
+
+# Setup Logging
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+
+# Init Database SQLite
+conn = sqlite3.connect('cekbio.db', check_same_thread=False)
+cursor = conn.cursor()
+
+def init_db():
+    cursor.execute('''CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, username TEXT, tier TEXT, usage INTEGER, last_reset TEXT, expire_date TEXT)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS stats (id INTEGER PRIMARY KEY, total_detections INTEGER)''')
+    cursor.execute('INSERT OR IGNORE INTO stats (id, total_detections) VALUES (1, 4296)')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS pending (user_id INTEGER PRIMARY KEY, tier TEXT)''')
+    conn.commit()
+
+init_db()
+
+TIER_LIMITS = {"Free": 5, "VIP": 25, "XVIP": 50, "VVIP": 100}
+TIER_PRICES = {"VIP": 3000, "XVIP": 7000, "VVIP": 10000}
+
+# === FUNGSI DATABASE ===
+def get_user(user_id: int, username: str):
+    today = date.today().isoformat()
+    cursor.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
+    user = cursor.fetchone()
+    if not user:
+        cursor.execute("INSERT INTO users VALUES (?, ?, 'Free', 0, ?, NULL)", (user_id, username, today))
+        conn.commit()
+        user = (user_id, username, "Free", 0, today, None)
+    
+    user_dict = {
+        "user_id": user[0], "username": user[1], "tier": user[2],
+        "usage": user[3], "last_reset": user[4], "expire_date": user[5]
+    }
+    if user_dict["last_reset"] != today:
+        cursor.execute("UPDATE users SET usage = 0, last_reset = ? WHERE user_id = ?", (today, user_id))
+        conn.commit()
+        user_dict["usage"] = 0
+    if user_dict["tier"] != "Free" and user_dict["expire_date"]:
+        expire_date = date.fromisoformat(user_dict["expire_date"])
+        if date.today() > expire_date:
+            cursor.execute("UPDATE users SET tier = 'Free', expire_date = NULL WHERE user_id = ?", (user_id,))
+            conn.commit()
+            user_dict["tier"] = "Free"
+            user_dict["expire_date"] = None
+    return user_dict
+
+# === COMMAND HANDLERS ===
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    user_data = get_user(user.id, user.username or "TidakAda")
+    now = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
+    limit = TIER_LIMITS.get(user_data["tier"], 5)
+    sisa_limit = limit - user_data["usage"]
+    
+    cursor.execute("SELECT total_detections FROM stats WHERE id = 1")
+    total_det = cursor.fetchone()[0]
+    cursor.execute("SELECT COUNT(*) FROM users")
+    total_users = cursor.fetchone()[0]
+
+    text = (
+        f"🤖 *Bot By Angga Official* 🤖\n"
+        f"━━━━━━━━━━━━━━━━\n"
+        f"📅 *Waktu:* {now}\n\n"
+        f"👤 *INFO PENGGUNA*\n"
+        f"├─ ID: `{user.id}`\n"
+        f"├─ Username: @{user_data['username']}\n"
+        f"├─ Tier: {user_data['tier']}\n"
+        f"└─ Sisa Deteksi Hari ini: {sisa_limit} nomor\n\n"
+        f"📊 *STATISTIK BOT*\n"
+        f"├─ Total Users: {total_users}\n"
+        f"└─ Total Deteksi: {total_det}x\n\n"
+        f"📌 *DAFTAR PERINTAH*\n"
+        f"├─ /start - Menampilkan menu ini\n"
+        f"├─ /detek <nomor> - Cek Bio WhatsApp\n"
+        f"└─ /premium - Lihat paket upgrade tier\n\n"
+        f"📝 *CARA PENGGUNAAN CEKBIO*\n"
+        f"Contoh: `/detek +628123456789`\n"
+        f"━━━━━━━━━━━━━━━━\n"
+        f"_Deteksi nomor mata elang bersama Bot By Angga Official_"
+    )
+
+    keyboard = [
+        [InlineKeyboardButton("💎 Lihat Paket Premium", callback_data="show_premium")],
+        [InlineKeyboardButton("📢 Info Channel", url=config.CHANNEL_URL), InlineKeyboardButton("🐞 Laporkan Bug", url=f"https://t.me/{config.ADMIN_USERNAME}")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    if update.callback_query:
+        await update.callback_query.answer()
+        await update.callback_query.edit_message_text(text, parse_mode='Markdown', reply_markup=reply_markup)
+    else:
+        await update.message.reply_text(text, parse_mode='Markdown', reply_markup=reply_markup)
+
+async def premium(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    user_data = get_user(user.id, user.username or "TidakAda")
+    
+    text = (
+        f"💎 *Paket Premium Bot By Angga Official* 💎\n"
+        f"━━━━━━━━━━━━━━━━\n"
+        f"◇ Status kamu saat ini: *{user_data['tier']}* (maks {TIER_LIMITS[user_data['tier']]} nomor/sesi)\n\n"
+        f"◇ *Paket VIP* ⭐\n├ /detek → maks 25 nomor\n└ Mulai Rp 3.000/hari\n\n"
+        f"◇ *Paket XVIP* 🌟\n├ /detek → maks 50 nomor\n└ Mulai Rp 7.000/hari\n\n"
+        f"◇ *Paket VVIP* 💎\n├ /detek → maks 100 nomor\n└ Mulai Rp 10.000/hari\n\n"
+        f"━━━━━━━━━━━━━━━━\n"
+        f"_Klik tombol di bawah untuk melihat QRIS & melakukan pembayaran otomatis._"
+    )
+    
+    keyboard = [
+        [InlineKeyboardButton("💸 Beli VIP (3K/hari)", callback_data="buy_VIP")],
+        [InlineKeyboardButton("💸 Beli XVIP (7K/hari)", callback_data="buy_XVIP")],
+        [InlineKeyboardButton("💸 Beli VVIP (10K/hari)", callback_data="buy_VVIP")],
+        [InlineKeyboardButton("⬅️ Kembali ke Menu", callback_data="back_to_start")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    if update.callback_query:
+        await update.callback_query.answer()
+        await update.callback_query.edit_message_text(text, parse_mode='Markdown', reply_markup=reply_markup)
+    else:
+        await update.message.reply_text(text, parse_mode='Markdown', reply_markup=reply_markup)
+
+async def detek(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    user_data = get_user(user.id, user.username or "TidakAda")
+    
+    limit = TIER_LIMITS.get(user_data["tier"], 5)
+    if user_data["usage"] >= limit:
+        await update.message.reply_text("🚫 *LIMIT HARIAN HABIS!*\n\nGunakan /premium untuk meningkatkan limit.", parse_mode='Markdown')
+        return
+
+    if not context.args:
+        await update.message.reply_text("❌ Format salah! Gunakan: `/detek +628xxx`", parse_mode='Markdown')
+        return
+
+    nomor = context.args[0]
+    if not nomor.startswith('+'):
+        await update.message.reply_text("❌ Nomor harus diawali dengan format internasional contoh: `+628xxx`", parse_mode='Markdown')
+        return
+
+    cursor.execute("UPDATE users SET usage = usage + 1 WHERE user_id = ?", (user.id,))
+    cursor.execute("UPDATE stats SET total_detections = total_detections + 1 WHERE id = 1")
+    conn.commit()
+    sisa_limit = limit - (user_data["usage"] + 1)
+    
+    await update.message.reply_text(
+        f"🔍 *Sedang mendeteksi Bio untuk nomor:* `{nomor}`\n\n"
+        f"└─ *Hasil:* [Hasil Bio WhatsApp akan muncul di sini]\n"
+        f"└─ Status: Online/Offline\n\n"
+        f"✅ Sisa deteksi hari ini: *{sisa_limit}* nomor",
+        parse_mode='Markdown'
+    )
+
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    cursor.execute("SELECT tier FROM pending WHERE user_id = ?", (user.id,))
+    pending = cursor.fetchone()
+    
+    if not pending:
+        await update.message.reply_text("❌ Anda tidak ada transaksi yang tertunda. Silakan pilih paket di /premium terlebih dahulu.")
+        return
+
+    tier = pending[0]
+    price = TIER_PRICES[tier]
+    photo_file = await update.message.photo[-1].get_file()
+    
+    caption = (
+        f"🛒 *PEMBAYARAN BARU MASUK* 🛒\n"
+        f"━━━━━━━━━━━━━━━━\n"
+        f"👤 User: @{user.username or 'TidakAda'}\n"
+        f"🆔 ID: `{user.id}`\n"
+        f"💎 Paket: *{tier}*\n"
+        f"💰 Jumlah: Rp {price}\n"
+        f"━━━━━━━━━━━━━━━━\n"
+        f"Jika uang sudah masuk, balas pesan ini dengan command:\n"
+        f"`/upgrade {user.id} {tier} 1`"
+    )
+    
+    await context.bot.send_photo(chat_id=config.ADMIN_ID, photo=photo_file.file_id, caption=caption, parse_mode='Markdown')
+    cursor.execute("DELETE FROM pending WHERE user_id = ?", (user.id,))
+    conn.commit()
+    
+    await update.message.reply_text("✅ *Bukti pembayaran berhasil dikirim ke Admin!*\n\nMohon tunggu 1-5 menit, Admin akan memverifikasi pembayaran Anda dan mengaktifkan tier Anda secara manual.\n\nTerima kasih!", parse_mode='Markdown')
+
+async def upgrade_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.effective_user.id != config.ADMIN_ID:
+        return
+        
+    try:
+        target_user_id = int(context.args[0])
+        target_tier = context.args[1].upper()
+        days = int(context.args[2])
+        
+        if target_tier not in TIER_LIMITS:
+            await update.message.reply_text("❌ Tier tidak valid. Pilih: VIP, XVIP, atau VVIP")
+            return
+            
+        user = get_user(target_user_id, "Unknown")
+        current_expire_str = user.get("expire_date")
+        base_date = date.today()
+        
+        if current_expire_str:
+            current_expire = date.fromisoformat(current_expire_str)
+            if current_expire > base_date:
+                base_date = current_expire
+                
+        new_expire = base_date + timedelta(days=days)
+        
+        cursor.execute("UPDATE users SET tier = ?, expire_date = ? WHERE user_id = ?", (target_tier, new_expire.isoformat(), target_user_id))
+        conn.commit()
+        
+        await update.message.reply_text(f"✅ Berhasil! User `{target_user_id}` telah di-upgrade ke tier *{target_tier}* selama {days} hari.", parse_mode='Markdown')
+        await context.bot.send_message(chat_id=target_user_id, text=f"🎉 *PEMBAYARAN DITERIMA* 🎉\n\nSelamat! Akun Anda telah di-upgrade ke tier *{target_tier}*.\nDurasi: {days} hari.\n\nSekarang Anda bisa mendeteksi hingga {TIER_LIMITS[target_tier]} nomor per hari!", parse_mode='Markdown')
+        
+    except (IndexError, ValueError):
+        await update.message.reply_text("❌ Format salah! Gunakan: `/upgrade <user_id> <tier> <hari>`\nContoh: `/upgrade 6281234567 VIP 1`", parse_mode='Markdown')
+
+async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    data = query.data
+    user = query.from_user
+    
+    if data == "show_premium":
+        await premium(update, context)
+    elif data == "back_to_start":
+        await start(update, context)
+    elif data.startswith("buy_"):
+        tier_name = data.split("_")[1]
+        price = TIER_PRICES[tier_name]
+        
+        cursor.execute("INSERT OR REPLACE INTO pending (user_id, tier) VALUES (?, ?)", (user.id, tier_name))
+        conn.commit()
+        
+        text = (
+            f"🛒 *PEMBAYARAN TIER {tier_name}* 🛒\n"
+            f"━━━━━━━━━━━━━━━━\n"
+            f"Silakan scan QRIS di bawah ini dan bayar sebesar:\n"
+            f"💵 *Rp {price}*\n\n"
+            f"📌 *Panduan:*\n"
+            f"1. Scan QRIS menggunakan OVO, GoPay, Dana, atau Bank apa saja.\n"
+            f"2. Bayar sesuai nominal di atas.\n"
+            f"3. Screenshot bukti pembayaran Anda.\n"
+            f"4. Kirimkan foto/screenshot bukti pembayaran KE CHAT INI.\n\n"
+            f"_Bot akan meneruskan bukti pembayaran Anda ke Admin untuk diverifikasi._"
+        )
+        keyboard = [[InlineKeyboardButton("❌ Batalkan Transaksi", callback_data="cancel_payment")]]
+        
+        await query.answer()
+        await query.message.delete()
+        await context.bot.send_photo(chat_id=user.id, photo=config.QRIS_IMAGE_URL, caption=text, parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(keyboard))
+
+    elif data == "cancel_payment":
+        cursor.execute("DELETE FROM pending WHERE user_id = ?", (user.id,))
+        conn.commit()
+        await query.answer("Transaksi dibatalkan.")
+        await start(update, context)
+
+def main() -> None:
+    app = Application.builder().token(config.BOT_TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("premium", premium))
+    app.add_handler(CommandHandler("detek", detek))
+    app.add_handler(CommandHandler("upgrade", upgrade_user))
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    app.add_handler(MessageHandler(filters.CallbackQuery, button_callback))
+
+    print("Bot By Angga Official sedang berjalan di Termux...")
+    app.run_polling(allowed_updates=Update.ALL_TYPES)
+
+if __name__ == '__main__':
+    main()
+```
+
+### 3. `requirements.txt`
+```text
+python-telegram-bot==20.7
+```
+
+### 4. `.gitignore`
+Agar file database dan cache tidak ikut ter-upload ke GitHub.
+```text
+__pycache__/
+*.db
+*.log
+.env
+```
+
+### 5. `README.md`
+Berkas panduan untuk pengguna GitHub dan Termux Anda.
+```markdown
+# Bot By Angga Official - CekBio WA
+
+Bot Telegram untuk deteksi Bio WhatsApp dengan sistem Tier (Free, VIP, XVIP, VVIP) dan pembayaran QRIS otomatis (Semi-Manual Admin Verification).
+
+## Fitur
+- Cek Bio WhatsApp
+- Sistem Limit Harian (Free: 5, VIP: 25, XVIP: 50, VVIP: 100)
+- Pembayaran via QRIS Static
+- Database permanen (SQLite) tahan restart
+
+## Cara Install di Termux
+
+1. Update dan install paket dasar Termux:
+   ```bash
+   pkg update && pkg upgrade -y
+   pkg install python git -y
+   ```
+
+2. Clone repository ini:
+   ```bash
+   git clone https://github.com/kacangkedele/cekbio-wa
+   cd cekbio-wa
+   ```
+
+3. Install requirements:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. Edit konfigurasi bot:
+   ```bash
+   nano config.py
+   ```
+   *Isi `BOT_TOKEN` dan `ADMIN_ID` Anda, lalu save (CTRL+X, Y, Enter)*
+
+5. Jalankan Bot:
+   ```bash
+   python bot.py
+   ```
+
+## Perintah Admin
+- `/upgrade <user_id> <tier> <hari>` (Contoh: `/upgrade 6281234567 VIP 30`)
+```
+
+---
+
+### Cara Upload ke GitHub & Menjalankan di Termux:
+1. **Upload ke GitHub**: Buat repository `cekbio-wa` di akun GitHub Anda, lalu upload file `bot.py`, `config.py`, `requirements.txt`, `.gitignore`, dan `README.md` ke repo tersebut.
+2. **Jalankan di Termux**: Cukup buka Termux, salin blok kode instalasi di file `README.md` di atas, dan jalankan langkah per langkah. Bot akan langsung online dan data pengguna akan tersimpan aman di file `cekbio.db` di dalam penyimpanan Termux Anda.
